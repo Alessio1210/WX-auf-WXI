@@ -1,15 +1,11 @@
-# Modul laden
-Import-Module ImportExcel
-
 $ConsumerOUs = @(
-    "OU=DE,OU=WX,OU=CONSUMER,DC=group,DC=pirelli,DC=com",    # Windows 10
-    "OU=DE,OU=WXI,OU=CONSUMER,DC=group,DC=pirelli,DC=com" # Windows 11
+    "OU=DE,OU=WX,OU=CONSUMER,DC=group,DC=pirelli,DC=com",   
+    "OU=DE,OU=WXI,OU=CONSUMER,DC=group,DC=pirelli,DC=com"
 )
 
-# Define the device types to check
 $DeviceTypes = @("DESKTOPS", "LAPTOPS")
 
-# Define locations in Consumer USERS DE
+
 $Locations = @(
     "DriverDEHQ",
     "FactoryOffice",
@@ -24,7 +20,7 @@ $Locations = @(
 
 $results = @()
 
-# Function to check if OU exists
+
 function Test-OUExists {
     param([string]$OUPath)
     try {
@@ -36,11 +32,10 @@ function Test-OUExists {
     }
 }
 
-# Iterate through each Consumer OU (WX and WXI)
 foreach ($consumerOU in $ConsumerOUs) {
     Write-Host "Processing OU: $consumerOU"
     
-    # First check if the OU exists
+
     if (-not (Test-OUExists -OUPath $consumerOU)) {
         Write-Host "  WARNING: OU does not exist or you don't have access: $consumerOU" -ForegroundColor Yellow
         $results += [PSCustomObject]@{
@@ -54,7 +49,7 @@ foreach ($consumerOU in $ConsumerOUs) {
         continue
     }
     
-    # Get all computers recursively from this OU and all sub-OUs
+
     try {
         Write-Host "  Attempting to get computers from OU..."
         $allComputers = Get-ADComputer -SearchBase $consumerOU -Filter * -ErrorAction Stop
@@ -62,13 +57,11 @@ foreach ($consumerOU in $ConsumerOUs) {
         
         Write-Host "  Total computers found: $totalComputers"
         
-        # Kategorisiere Computer nach Typ (Desktop vs Laptop)
+      
         $desktops = @()
         $laptops = @()
         
         foreach ($computer in $allComputers) {
-            # Try to determine if it's a desktop or laptop based on name or other properties
-            # You might need to adjust this logic based on your naming convention
             if ($computer.Name -like "*LAP*" -or $computer.Name -like "*LT*" -or $computer.Name -like "*NB*") {
                 $laptops += $computer
             } else {
@@ -82,7 +75,7 @@ foreach ($consumerOU in $ConsumerOUs) {
         Write-Host "  Desktops: $desktopCount"
         Write-Host "  Laptops: $laptopCount"
         
-        # Add results for this OU (ONLY the main OU, not sub-OUs to avoid double counting)
+        
         $results += [PSCustomObject]@{
             OU = $consumerOU
             WindowsVersion = if ($consumerOU -like "*WXI*") { "Windows 11" } else { "Windows 10" }
@@ -92,21 +85,21 @@ foreach ($consumerOU in $ConsumerOUs) {
             Status = "Success"
         }
         
-        # Show breakdown by sub-OUs for INFORMATION ONLY (not counted in totals)
+        
         Write-Host "  Getting sub-OUs for information..."
         $subOUs = Get-ADOrganizationalUnit -SearchBase $consumerOU -Filter * | Where-Object {$_.DistinguishedName -ne $consumerOU}
         
         foreach ($subOU in $subOUs) {
             try {
                 Write-Host "    Processing sub-OU: $($subOU.Name)"
-                # Get only DIRECT computers from this sub-OU (not recursive)
+               
                 $subOUComputers = Get-ADComputer -SearchBase $subOU.DistinguishedName -Filter * -SearchScope OneLevel
                 $subOUCount = $subOUComputers.Count
                 
                 if ($subOUCount -gt 0) {
                     Write-Host "    Sub-OU $($subOU.Name): $subOUCount computers (DIRECT only, for information)"
                     
-                    # Add sub-OU results for INFORMATION ONLY - these won't be counted in totals
+                    
                     $results += [PSCustomObject]@{
                         OU = $subOU.DistinguishedName
                         WindowsVersion = if ($consumerOU -like "*WXI*") { "Windows 11" } else { "Windows 10" }
@@ -136,11 +129,10 @@ foreach ($consumerOU in $ConsumerOUs) {
     }
 }
 
-# Get users from Consumer USERS DE for each location
 Write-Host "`nProcessing Consumer USERS DE locations..."
 $ConsumerUsersDE = "OU=DE,OU=USERS,OU=CONSUMER,DC=group,DC=pirelli,DC=com"
 
-# Check if the main USERS DE OU exists
+
 if (-not (Test-OUExists -OUPath $ConsumerUsersDE)) {
     Write-Host "WARNING: Main USERS DE OU does not exist: $ConsumerUsersDE" -ForegroundColor Yellow
 } else {
@@ -176,58 +168,53 @@ if (-not (Test-OUExists -OUPath $ConsumerUsersDE)) {
     }
 }
 
-# Hilfsfunktion: Standort extrahieren
+
 function Get-LocationName($ou) {
-    # Extrahiere den Standort aus verschiedenen OU-Strukturen
-    # Für Sub-OUs wie "OU=DESKTOPS,OU=Munich,OU=DE,OU=WX,OU=CONSUMER"
+
     if ($ou -match "OU=(?:DESKTOPS|LAPTOPS),OU=([^,]+),OU=DE,OU=(?:WX|WXI),OU=CONSUMER") {
-        return $matches[1]  # z.B. "Munich" aus "OU=DESKTOPS,OU=Munich,OU=DE,OU=WX,..."
-    }
-    # Für direkte Standort-OUs wie "OU=Munich,OU=DE,OU=WX,OU=CONSUMER"
+        return $matches[1]}
+    
     elseif ($ou -match "OU=([^,]+),OU=DE,OU=(?:WX|WXI),OU=CONSUMER") {
-        return $matches[1]  # z.B. "Munich" aus "OU=Munich,OU=DE,OU=WX,..."
+        return $matches[1] 
     }
-    # Für Haupt-OUs wie "OU=DE,OU=WX,OU=CONSUMER"
+ 
     elseif ($ou -match "OU=([^,]+),OU=(?:WX|WXI),OU=CONSUMER") {
-        return $matches[1]  # z.B. "DE" aus "OU=DE,OU=WX,..."
+        return $matches[1]  
     } 
     else {
         return "Unknown"
     }
 }
 
-# Hilfsfunktion: Device-Typ extrahieren
+
 function Get-DeviceType($ou) {
     if ($ou -match "OU=(DESKTOPS|LAPTOPS),") {
         return $matches[1]
     } else {
-        return "Mixed"  # Für Haupt-OUs ohne spezifischen Typ
+        return "Mixed"  
     }
 }
 
-# Erstelle die finale Pivot-Tabelle im gewünschten Layout
+
 $finalResults = @()
 
-# Verwende die Haupt-OUs direkt - keine komplizierte Filterung
 $ouResults = $results | Where-Object { 
     $_.WindowsVersion -ne 'N/A' -and 
     $_.Status -eq 'Success' -and
     $_.TotalComputers -gt 0
 }
 
-# Debug: Zeige alle Ergebnisse
 Write-Host "`n=== DEBUG: Alle OU-Ergebnisse mit Computern ==="
 $ouResults | ForEach-Object { 
     Write-Host "OU: $($_.OU) - Windows: $($_.WindowsVersion) - Computer: $($_.TotalComputers) - Status: $($_.Status)"
 }
 
-# Hole auch User-Daten
+
 $userResults = $results | Where-Object { $_.DeviceType -eq 'USERS' }
 
-# Erstelle direkt die Standort-Zeilen basierend auf den tatsächlichen Daten
+
 $locationData = @{}
 
-# Sammle Computer-Daten
 foreach ($result in $ouResults) {
     $location = Get-LocationName $result.OU
     $deviceType = Get-DeviceType $result.OU
@@ -260,9 +247,9 @@ foreach ($result in $ouResults) {
     }
 }
 
-# Sammle User-Daten
+
 foreach ($userResult in $userResults) {
-    # Extrahiere Standort aus User-OU
+    
     Write-Host "DEBUG: User-OU: $($userResult.OU) - Users: $($userResult.Users)"
     if ($userResult.OU -match "OU=([^,]+),OU=DE,OU=USERS,OU=CONSUMER") {
         $location = $matches[1]
@@ -271,7 +258,7 @@ foreach ($userResult in $userResults) {
             $locationData[$location]["User"] += $userResult.Users
             Write-Host "DEBUG: User zu bestehendem Standort hinzugefügt: $location"
         } else {
-            # Erstelle neuen Standort für User
+           
             $locationData[$location] = @{
                 "User" = $userResult.Users
                 "Desktops W10" = 0
@@ -286,13 +273,12 @@ foreach ($userResult in $userResults) {
     }
 }
 
-# Zusätzlich: Sammle Computer-Daten aus Information-Only Sub-OUs
+
 Write-Host "`n=== DEBUG: Sub-OUs für bessere Standort-Auflösung ==="
 foreach ($result in $results) {
     if ($result.Status -eq "Information Only" -and $result.TotalComputers -gt 0) {
         Write-Host "Sub-OU gefunden: $($result.OU) - Computer: $($result.TotalComputers)"
         
-        # Extrahiere Standort aus Sub-OU
         if ($result.OU -match "OU=(?:DESKTOPS|LAPTOPS),OU=([^,]+),OU=DE,OU=(?:WX|WXI),OU=CONSUMER") {
             $location = $matches[1]
             $deviceType = if ($result.OU -match "OU=(DESKTOPS|LAPTOPS),") { $matches[1] } else { "Mixed" }
@@ -309,7 +295,7 @@ foreach ($result in $results) {
                 }
             }
             
-            # Bestimme Windows-Version aus der ursprünglichen OU
+            
             $windowsVersion = $result.WindowsVersion
             
             if ($windowsVersion -eq "Windows 10") {
@@ -329,7 +315,7 @@ foreach ($result in $results) {
     }
 }
 
-# Erstelle finale Ergebnisse
+
 foreach ($location in $locationData.Keys) {
     $data = $locationData[$location]
     $finalResults += [PSCustomObject]@{
@@ -343,7 +329,7 @@ foreach ($location in $locationData.Keys) {
     }
 }
 
-# Wenn keine Standorte gefunden wurden, erstelle eine Gesamt-Zeile
+
 if ($finalResults.Count -eq 0) {
     Write-Host "WARNUNG: Keine Standorte gefunden, erstelle Gesamt-Übersicht"
     
@@ -362,7 +348,6 @@ if ($finalResults.Count -eq 0) {
     }
 }
 
-# Füge Total-Zeile hinzu
 $totalUsers = ($finalResults | Measure-Object -Property "User" -Sum).Sum
 $totalDesktopsW10 = ($finalResults | Measure-Object -Property "Desktops W10" -Sum).Sum
 $totalNotebooksW10 = ($finalResults | Measure-Object -Property "Notebooks W10" -Sum).Sum
@@ -379,7 +364,6 @@ $finalResults += [PSCustomObject]@{
     "Users Presumed" = $totalUsers
 }
 
-# DEBUG: Zeige finale Ergebnisse
 Write-Host "`n=== DEBUG: Finale Ergebnisse für Dashboard ==="
 $finalResults | ForEach-Object { 
     Write-Host "Standort: $($_.'OU DE')"
@@ -391,14 +375,10 @@ $finalResults | ForEach-Object {
     Write-Host "  ---"
 }
 
-# Export nach Excel
-$excelPath = Join-Path $env:USERPROFILE "Desktop\\Consumer_ComputerComparison.xlsx"
-$finalResults | Export-Excel -Path $excelPath -WorksheetName 'Vergleich' -AutoSize -BoldTopRow -TableName 'VergleichTabelle'
 
-# Erstelle schöne HTML-Web-Ansicht
 $htmlPath = Join-Path $env:USERPROFILE "Desktop\\Consumer_Dashboard.html"
 
-# DEBUG: Zeige Statistiken für Dashboard
+
 Write-Host "`n=== DEBUG: Dashboard-Statistiken ==="
 Write-Host "totalUsers: $totalUsers"
 Write-Host "totalDesktopsW10: $totalDesktopsW10"
@@ -573,38 +553,201 @@ $html = @"
         .badge-w10 { background: #e3f2fd; color: #1976d2; }
         .badge-w11 { background: #f3e5f5; color: #7b1fa2; }
         
+        /* Migration Section Styles */
+        .migration-section {
+            margin: 0 30px 30px 30px;
+            padding: 0;
+        }
+        
+        .migration-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 30px;
+            color: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .migration-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .migration-header h2 {
+            font-size: 2.2em;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+        
+        .migration-header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .migration-stats {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 40px;
+            align-items: center;
+        }
+        
+        .progress-circle {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: conic-gradient(
+                #4CAF50 0deg,
+                #4CAF50 $(
+                    $totalComputers = ($totalDesktopsW10 + $totalNotebooksW10) + ($totalDesktopsW11 + $totalNotebooksW11)
+                    if ($totalComputers -gt 0) {
+                        $percentage = [math]::Round((($totalDesktopsW11 + $totalNotebooksW11) / $totalComputers) * 100, 1)
+                        "$percentage%"
+                    } else { "0%" }
+                ),
+                rgba(255,255,255,0.3) $(
+                    $totalComputers = ($totalDesktopsW10 + $totalNotebooksW10) + ($totalDesktopsW11 + $totalNotebooksW11)
+                    if ($totalComputers -gt 0) {
+                        $percentage = [math]::Round((($totalDesktopsW11 + $totalNotebooksW11) / $totalComputers) * 100, 1)
+                        "$percentage%"
+                    } else { "0%" }
+                ),
+                rgba(255,255,255,0.3) 100%
+            );
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+        
+        .progress-inner {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        
+        .progress-percentage {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #4CAF50;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .progress-label {
+            font-size: 0.9em;
+            margin-top: 5px;
+            opacity: 0.9;
+        }
+        
+        .migration-details {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .detail-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .detail-icon {
+            font-size: 1.3em;
+            width: 30px;
+            text-align: center;
+        }
+        
+        .detail-text {
+            font-size: 1.1em;
+            flex: 1;
+        }
+        
+        .detail-text strong {
+            color: #4CAF50;
+            font-weight: 600;
+        }
+        
         @media (max-width: 768px) {
             .header h1 { font-size: 2em; }
             .stats-grid { grid-template-columns: 1fr; }
             .table-container { padding: 15px; }
             .data-table th, .data-table td { padding: 8px 6px; font-size: 0.9em; }
+            .migration-stats { grid-template-columns: 1fr; text-align: center; }
+            .progress-circle { margin: 0 auto; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🏢 Dashboard</h1>
-            <p>OU sortierte PCs</p>
-            <p style="font-size: 0.9em; margin-top: 10px; opacity: 0.7;">Erstellt am: $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss')</p>
+            <h1>WX auf WXI</h1>
         </div>
         
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-number total">$($totalUsers)</div>
-                <div class="stat-label">👥 Gesamt Benutzer</div>
+                <div class="stat-label">Alle Benutzer</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number windows10">$($totalDesktopsW10 + $totalNotebooksW10)</div>
-                <div class="stat-label">💻 Windows 10 Geräte</div>
-            </div>
+                <div class="stat-label">WX Geräte</div>
+            </div> 
             <div class="stat-card">
                 <div class="stat-number windows11">$($totalDesktopsW11 + $totalNotebooksW11)</div>
-                <div class="stat-label">🖥️ Windows 11 Geräte</div>
+                <div class="stat-label">WXI Geräte</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number total">$(($totalDesktopsW10 + $totalNotebooksW10) + ($totalDesktopsW11 + $totalNotebooksW11))</div>
-                <div class="stat-label">📊 Gesamt Computer</div>
+                <div class="stat-label">Alle Geräte</div>
+            </div>
+        </div>
+        
+        <!-- Migrations-Fortschritt -->
+        <div class="migration-section">
+            <div class="migration-card">
+                <div class="migration-header">
+                    <h2>Progress</h2>
+                    <p>Das sind die PCs die bereits umgestellt wurden</p>
+                </div>
+                
+                <div class="migration-stats">
+                    <div class="progress-circle">
+                        <div class="progress-inner">
+                            <div class="progress-percentage">$(
+                                $totalComputers = ($totalDesktopsW10 + $totalNotebooksW10) + ($totalDesktopsW11 + $totalNotebooksW11)
+                                if ($totalComputers -gt 0) {
+                                    [math]::Round((($totalDesktopsW11 + $totalNotebooksW11) / $totalComputers) * 100, 1)
+                                } else { 0 }
+                            )%</div>
+                            <div class="progress-label">Migriert</div>
+                        </div>
+                    </div>
+                    
+                    <div class="migration-details">
+                        <div class="detail-item">
+                         
+                            <span class="detail-text">Migriert: <strong>$($totalDesktopsW11 + $totalNotebooksW11)</strong> PCs</span>
+                        </div>
+                        <div class="detail-item">
+                      
+                            <span class="detail-text">Verbleibend: <strong>$(
+                                $remaining = $totalDesktopsW10 + $totalNotebooksW10
+                                if ($remaining -eq 0) { "Migration abgeschlossen! 🎉" } else { "$remaining PCs" }
+                            )</strong></span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -612,19 +755,17 @@ $html = @"
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>🏢 Standort</th>
-                        <th>👥 Benutzer</th>
-                        <th>🖥️ Desktops W10</th>
-                        <th>💻 Notebooks W10</th>
-                        <th>🖥️ Desktops W11</th>
-                        <th>💻 Notebooks W11</th>
-                        <th>👤 Gesamt Benutzer</th>
+                        <th>Standort</th>
+                        <th>User</th>
+                        <th>Desktops W10</th>
+                        <th>Laptops W10</th>
+                        <th>Desktops W11</th>
+                        <th>Notebooks W11</th>
                     </tr>
                 </thead>
                 <tbody>
 "@
 
-# Füge Tabellenzeilen hinzu
 foreach ($row in $finalResults) {
     $rowClass = if ($row."OU DE" -eq "Total DE") { "total-row" } else { "" }
     $locationClass = if ($row."OU DE" -eq "Total DE") { "" } else { "location-cell" }
@@ -637,7 +778,6 @@ foreach ($row in $finalResults) {
                         <td class="number-cell">$($row."Notebooks W10")</td>
                         <td class="number-cell">$($row."Desktops W11")</td>
                         <td class="number-cell">$($row."Notebooks W11")</td>
-                        <td class="number-cell">$($row."Users Presumed")</td>
                     </tr>
 "@
 }
@@ -646,26 +786,16 @@ $html += @"
                 </tbody>
             </table>
         </div>
+    </div>
 </body>
 </html>
 "@
 
-# Speichere HTML-Datei
-$html | Out-File -FilePath $htmlPath -Encoding UTF8
 
-Write-Host "Excel-Datei wurde erstellt: $excelPath"
-Write-Host "HTML-Dashboard wurde erstellt: $htmlPath"
-Write-Host "Öffne das Dashboard im Browser: start $htmlPath"
-
-# Optional: Automatisch im Browser öffnen
 Start-Process $htmlPath
 
-# Display summary
-Write-Host "`n=== COMPUTER COMPARISON SUMMARY ==="
-$results | Format-Table -AutoSize
 
-# DEBUG: Zeige alle Ergebnisse vor der Verarbeitung
-Write-Host "`n=== DEBUG: Alle gesammelten Ergebnisse ==="
+Write-Host "`n=== DEBUG: ==="
 $results | ForEach-Object { 
     Write-Host "OU: $($_.OU)"
     Write-Host "  WindowsVersion: $($_.WindowsVersion)"
@@ -675,14 +805,3 @@ $results | ForEach-Object {
     Write-Host "  ---"
 }
 
-# Show totals
-Write-Host "`n=== TOTALS ==="
-$wxTotal = ($results | Where-Object {$_.WindowsVersion -eq "Windows 10" -and $_.Status -eq "Success"} | Measure-Object -Property TotalComputers -Sum).Sum
-$wxiTotal = ($results | Where-Object {$_.WindowsVersion -eq "Windows 11" -and $_.Status -eq "Success"} | Measure-Object -Property TotalComputers -Sum).Sum
-
-Write-Host "Windows 10 (WX) Total Computers: $wxTotal"
-Write-Host "Windows 11 (WXI) Total Computers: $wxiTotal"
-
-# Show status summary
-Write-Host "`n=== STATUS SUMMARY ==="
-$results | Group-Object Status | Format-Table -AutoSize 
