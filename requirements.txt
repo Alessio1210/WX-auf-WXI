@@ -1,0 +1,2 @@
+script das im ad OU durchgeht und den count von alles objecten ausgibt, per reiter in excel script starten, infos werden dann in excel gespeichert
+powershell am besten
